@@ -1,0 +1,18 @@
+# Python 编译缓存
+__pycache__/
+*.py[cod]
+
+# agent 运行时状态（队友名册 + inbox 消息总线，本地痕迹）
+.team/
+
+# 长期记忆 / 用户画像 / 对话流水（隐私，不上传）
+memory/
+
+# 本地测试目录（当前为空）
+test/
+
+# 常见不应入库的文件
+.env
+*.log
+.DS_Store
+Thumbs.db
