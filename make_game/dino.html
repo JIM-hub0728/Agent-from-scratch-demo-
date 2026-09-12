@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>恐龙跑酷 - Chrome 离线小游戏复刻</title>
+<style>
+  body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: #f7f7f7;
+    font-family: "Courier New", monospace;
+    user-select: none;
+  }
+  #game {
+    background: #f7f7f7;
+    border-bottom: 2px solid #ccc;
+  }
+  #hint {
+    margin-top: 12px;
+    color: #888;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="260"></canvas>
+<div id="hint">空格 / ↑ 跳跃 &nbsp;·&nbsp; ↓ 蹲下 &nbsp;·&nbsp; 游戏结束后按空格重开</div>
+<script>
+(function () {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const GROUND_Y = H - 40;
+
+  // ---------- 状态 ----------
+  let dino, obstacles, clouds, groundOffset, score, hiScore, speed, frame, gameOver, started;
+  hiScore = 0;
+
+  function reset() {
+    dino = { x: 50, y: GROUND_Y, w: 40, h: 44, duckH: 26, vy: 0, jumping: false, ducking: false, legFrame: 0 };
+    obstacles = [];
+    clouds = [];
+    groundOffset = 0;
+    score = 0;
+    speed = 6;
+    frame = 0;
+    gameOver = false;
+    started = false;
+  }
+  reset();
+
+  // ---------- 输入 ----------
+  document.addEventListener('keydown', function (e) {
+    if (e.code === 'Space' || e.code === 'ArrowUp') {
+      e.preventDefault();
+      if (gameOver) { reset(); started = true; return; }
+      started = true;
+      if (!dino.jumping) { dino.vy = -13; dino.jumping = true; dino.ducking = false; }
+    }
+    if (e.code === 'ArrowDown') {
+      e.preventDefault();
+      if (dino.jumping) { dino.vy += 4; } // 快速下落
+      else dino.ducking = true;
+    }
+  });
+  document.addEventListener('keyup', function (e) {
+    if (e.code === 'ArrowDown') dino.ducking = false;
+  });
+  // 触屏支持
+  canvas.addEventListener('touchstart', function (e) {
+    e.preventDefault();
+    if (gameOver) { reset(); started = true; return; }
+    started = true;
+    if (!dino.jumping) { dino.vy = -13; dino.jumping = true; }
+  }, { passive: false });
+
+  // ---------- 生成障碍 ----------
+  function spawnObstacle() {
+    const r = Math.random();
+    if (score > 200 && r < 0.25) {
+      // 翼龙：三种高度
+      const ys = [GROUND_Y - 10, GROUND_Y - 40, GROUND_Y - 70];
+      obstacles.push({ type: 'bird', x: W, y: ys[Math.floor(Math.random() * 3)], w: 42, h: 30, wingFrame: 0 });
+    } else if (r < 0.6) {
+      // 小仙人掌（1~3 个一组）
+      const n = 1 + Math.floor(Math.random() * 3);
+      obstacles.push({ type: 'cactus', x: W, y: GROUND_Y, w: 16 * n, h: 36, count: n });
+    } else {
+      // 大仙人掌
+      const n = 1 + Math.floor(Math.random() * 2);
+      obstacles.push({ type: 'cactusBig', x: W, y: GROUND_Y, w: 22 * n, h: 52, count: n });
+    }
+  }
+
+  // ---------- 碰撞 ----------
+  function hit(a, b) {
+    const ah = a.ducking ? a.duckH : a.h;
+    return a.x < b.x + b.w &&
+           a.x + a.w > b.x &&
+           (a.y - ah) < b.y &&
+           a.y > (b.y - b.h);
+  }
+
+  // ---------- 绘制 ----------
+  function drawDino() {
+    const d = dino;
+    ctx.fillStyle = '#535353';
+    const h = d.ducking ? d.duckH : d.h;
+    const top = d.y - h;
+    if (d.ducking) {
+      ctx.fillRect(d.x, top, d.w + 10, h);          // 趴下的身体
+      ctx.fillRect(d.x + d.w - 6, top - 6, 20, 12); // 头
+    } else {
+      ctx.fillRect(d.x, top + 12, d.w - 8, h - 12); // 身体
+      ctx.fillRect(d.x + d.w - 18, top, 24, 18);    // 头
+    }
+    // 眼睛
+    ctx.fillStyle = '#f7f7f7';
+    ctx.fillRect(d.x + d.w - 6, top + 4, 4, 4);
+    // 腿（跑动动画）
+    ctx.fillStyle = '#535353';
+    if (!d.jumping && started && !gameOver) {
+      if (Math.floor(frame / 6) % 2 === 0) {
+        ctx.fillRect(d.x + 6, d.y, 8, 6);
+      } else {
+        ctx.fillRect(d.x + 20, d.y, 8, 6);
+      }
+    } else {
+      ctx.fillRect(d.x + 6, d.y, 8, 6);
+      ctx.fillRect(d.x + 20, d.y, 8, 6);
+    }
+  }
+
+  function drawObstacle(o) {
+    ctx.fillStyle = '#535353';
+    if (o.type === 'bird') {
+      const wingUp = Math.floor(frame / 8) % 2 === 0;
+      ctx.fillRect(o.x + 8, o.y - 14, 26, 14);            // 身体
+      ctx.fillRect(o.x + 30, o.y - 18, 12, 8);            // 头/嘴
+      if (wingUp) ctx.fillRect(o.x + 12, o.y - 30, 14, 16);
+      else ctx.fillRect(o.x + 12, o.y - 2, 14, 4);
+    } else {
+      const unitW = o.type === 'cactus' ? 16 : 22;
+      for (let i = 0; i < o.count; i++) {
+        const x = o.x + i * unitW;
+        ctx.fillRect(x + unitW / 4, o.y - o.h, unitW / 2, o.h); // 主干
+        ctx.fillRect(x, o.y - o.h + 8, unitW / 4, 6);           // 左臂
+        ctx.fillRect(x + unitW * 3 / 4, o.y - o.h + 14, unitW / 4, 6); // 右臂
+      }
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // 云
+    ctx.fillStyle = '#ddd';
+    clouds.forEach(c => {
+      ctx.fillRect(c.x, c.y, 34, 10);
+      ctx.fillRect(c.x + 8, c.y - 6, 18, 8);
+    });
+
+    // 地面
+    ctx.strokeStyle = '#535353';
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y + 2);
+    ctx.lineTo(W, GROUND_Y + 2);
+    ctx.stroke();
+    // 地面碎屑
+    ctx.fillStyle = '#aaa';
+    for (let i = 0; i < 12; i++) {
+      const x = (i * 90 - groundOffset) % (W + 90);
+      ctx.fillRect(x < 0 ? x + W + 90 : x, GROUND_Y + 10 + (i % 3) * 6, 14, 2);
+    }
+
+    obstacles.forEach(drawObstacle);
+    drawDino();
+
+    // 分数
+    ctx.fillStyle = '#535353';
+    ctx.font = 'bold 18px "Courier New"';
+    ctx.textAlign = 'right';
+    const s = String(Math.floor(score)).padStart(5, '0');
+    const hs = String(Math.floor(hiScore)).padStart(5, '0');
+    ctx.fillText('HI ' + hs + '  ' + s, W - 16, 28);
+
+    if (!started && !gameOver) {
+      ctx.textAlign = 'center';
+      ctx.fillText('按 空格 开始', W / 2, H / 2 - 20);
+    }
+    if (gameOver) {
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 26px "Courier New"';
+      ctx.fillText('G A M E   O V E R', W / 2, H / 2 - 24);
+      ctx.font = 'bold 16px "Courier New"';
+      ctx.fillText('按空格重新开始', W / 2, H / 2 + 6);
+    }
+  }
+
+  // ---------- 主循环 ----------
+  let nextSpawn = 60;
+  function update() {
+    if (!started || gameOver) return;
+    frame++;
+    score += 0.15;
+    speed = 6 + Math.min(score / 150, 6); // 最高约 12
+    groundOffset += speed;
+
+    // 恐龙物理
+    dino.y += dino.vy;
+    dino.vy += 0.7; // 重力
+    if (dino.y >= GROUND_Y) { dino.y = GROUND_Y; dino.vy = 0; dino.jumping = false; }
+
+    // 生成障碍
+    if (--nextSpawn <= 0) {
+      spawnObstacle();
+      nextSpawn = 40 + Math.random() * 70 + Math.max(0, 40 - speed * 3);
+    }
+    // 云
+    if (Math.random() < 0.005) clouds.push({ x: W, y: 30 + Math.random() * 60 });
+    clouds.forEach(c => c.x -= 1);
+    clouds = clouds.filter(c => c.x > -60);
+
+    // 移动障碍
+    obstacles.forEach(o => o.x -= speed);
+    obstacles = obstacles.filter(o => o.x + o.w > -10);
+
+    // 碰撞
+    for (const o of obstacles) {
+      if (hit(dino, o)) {
+        gameOver = true;
+        hiScore = Math.max(hiScore, score);
+        break;
+      }
+    }
+  }
+
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+</script>
+</body>
+</html>

@@ -136,7 +136,7 @@ class TeammateManager:
         return f"已召入队友 '{name}'（职司：{role}），线程已启动"
 
     # 队友允许用的基础工具白名单：故意不含 update_todos（计划属于 lead）
-    TEAMMATE_BASIC_TOOLS = ["run_command", "web_fetch", "load_skill", "write_file"]
+    TEAMMATE_BASIC_TOOLS = ["run_command", "web_fetch", "load_skill", "read_file", "write_file", "edit_file", "list_dir", "code_sandbox", "download_file"]
 
     def _teammate_loop(self, name: str, role: str, prompt: str):
         """队友的主循环：和子代理的关键差异——while True 常驻，没活就等信。"""
@@ -175,7 +175,7 @@ class TeammateManager:
             for turn in range(20):  # 一轮差事最多 20 次模型调用，防失控
                 try:
                     msg = self.client.messages.create(
-                        model="k3",
+                        model="deepseek-flash",
                         system=system_prompt,
                         tools=teammate_tools,
                         messages=messages,

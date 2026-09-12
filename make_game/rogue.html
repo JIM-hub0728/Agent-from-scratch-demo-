@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>地牢爬行 · Roguelike</title>
+<style>
+body{margin:0;background:#0a0a0a;color:#ccc;font:14px Consolas,"Courier New",monospace;display:flex;flex-direction:column;align-items:center;padding:8px}
+h1{font-size:16px;color:#c9a227;margin:4px 0}
+#hud{width:1024px;box-sizing:border-box;background:#141414;border:1px solid #333;padding:5px 10px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+#hpbar{display:inline-block;width:140px;height:10px;background:#400;border:1px solid #633;vertical-align:middle}
+#hpfill{display:block;height:100%;background:#3c3}
+canvas{background:#000;border:1px solid #333;border-top:none}
+#log{width:1024px;box-sizing:border-box;background:#141414;border:1px solid #333;border-top:none;padding:5px 10px;height:120px;overflow:hidden}
+.dim{color:#666}
+</style>
+</head>
+<body>
+<h1>地牢爬行 · 寻找尤登护符</h1>
+<div id="hud"></div>
+<canvas id="cv" width="1024" height="640"></canvas>
+<div id="log"></div>
+<script>
+"use strict";
+const W=64,H=40,T=16,FR=8,MAXD=8;
+const cv=document.getElementById("cv"),ctx=cv.getContext("2d");
+const hud=document.getElementById("hud"),logEl=document.getElementById("log");
+ctx.font=T+'px Consolas,monospace';ctx.textBaseline="top";
+// 怪物表：符号 名称 颜色 HP 攻 防 经验 最低层
+const MT=[
+["r","老鼠","#b08050",5,2,0,2,1],["g","哥布林","#4caf50",9,3,0,4,1],
+["s","毒蛇","#8bc34a",7,4,0,5,2],["o","兽人","#ff9800",15,5,1,8,3],
+["T","巨魔","#f44336",24,7,2,14,5],["D","巨龙","#e040fb",40,10,3,30,7]];
+const DIRS=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+let map,seen,vis,mons,items,P,depth,kills,msgs,state;
+const R=n=>Math.floor(Math.random()*n);
+const pick=a=>a[R(a.length)];
+const dis=(a,b,c,d)=>Math.max(Math.abs(a-c),Math.abs(b-d));
+const monAt=(x,y)=>mons.find(m=>m.x===x&&m.y===y);
+const itmAt=(x,y)=>items.find(i=>i.x===x&&i.y===y);
+function log(m){msgs.push(m);if(msgs.length>60)msgs.shift();drawLog();}
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function drawLog(){let h="",s=Math.max(0,msgs.length-6);
+for(let i=s;i<msgs.length;i++)h+='<div class="'+(i<msgs.length-2?"dim":"")+'">'+esc(msgs[i])+"</div>";
+logEl.innerHTML=h;}
+// ---------- 地图生成 ----------
+function ht(a,b,y){for(let x=Math.min(a,b);x<=Math.max(a,b);x++)map[y][x]=1;}
+function vt(a,b,x){for(let y=Math.min(a,b);y<=Math.max(a,b);y++)map[y][x]=1;}
+function spot(rooms,md){for(let t=0;t<50;t++){const r=pick(rooms),x=r.x+R(r.w),y=r.y+R(r.h);
+if(dis(x,y,P.x,P.y)<md||monAt(x,y)||itmAt(x,y))continue;return{x:x,y:y};}return null;}
+function gen(){
+map=[];seen=[];vis=[];
+for(let y=0;y<H;y++){map.push(Array(W).fill(0));seen.push(Array(W).fill(false));vis.push(Array(W).fill(false));}
+const rooms=[];let tr=0;
+while(rooms.length<12&&tr++<300){
+const w=4+R(9),h=3+R(6),x=1+R(W-w-2),y=1+R(H-h-2);
+if(rooms.some(r=>x<r.x+r.w+1&&r.x<x+w+1&&y<r.y+r.h+1&&r.y<y+h+1))continue;
+rooms.push({x:x,y:y,w:w,h:h,cx:x+(w>>1),cy:y+(h>>1)});
+for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++)map[j][i]=1;}
+for(let i=1;i<rooms.length;i++){const a=rooms[i-1],b=rooms[i];
+if(R(2)){ht(a.cx,b.cx,a.cy);vt(a.cy,b.cy,b.cx);}else{vt(a.cy,b.cy,a.cx);ht(a.cx,b.cx,b.cy);}}
+P.x=rooms[0].cx;P.y=rooms[0].cy;
+items=[];mons=[];
+const L=rooms[rooms.length-1];
+if(depth<MAXD)items.push({x:L.cx,y:L.cy,t:"stair",g:">",c:"#ffeb3b"});
+else items.push({x:L.cx,y:L.cy,t:"amu",g:"*",c:"#00e5ff"});
+for(let i=0;i<3+(depth>>1);i++){const s=spot(rooms,3);if(!s)continue;
+const t=pick(["pot","pot","swd","shd"]);
+items.push({x:s.x,y:s.y,t:t,g:{pot:"!",swd:"/",shd:"]"}[t],c:{pot:"#ff80ff",swd:"#e0e0e0",shd:"#64b5f6"}[t]});}
+for(let i=0;i<5+depth*2;i++){const s=spot(rooms,7);if(!s)continue;
+const t=pick(MT.filter(m=>m[7]<=depth)),sc=1+(depth-t[7])*0.15;
+mons.push({x:s.x,y:s.y,g:t[0],name:t[1],c:t[2],hp:Math.round(t[3]*sc),maxhp:Math.round(t[3]*sc),
+atk:Math.round(t[4]*sc),def:t[5],xp:Math.round(t[6]*sc),rg:t[0]==="T"});}
+fov();}
+// ---------- FOV ----------
+function los(x0,y0,x1,y1){let dx=Math.abs(x1-x0),dy=Math.abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1,e=dx-dy,x=x0,y=y0;
+while(true){if(!(x===x0&&y===y0)&&!(x===x1&&y===y1)&&map[y][x]===0)return false;
+if(x===x1&&y===y1)return true;const e2=2*e;if(e2>-dy){e-=dy;x+=sx;}if(e2<dx){e+=dx;y+=sy;}}}
+function fov(){for(let y=0;y<H;y++)for(let x=0;x<W;x++)vis[y][x]=false;
+for(let y=Math.max(0,P.y-FR);y<=Math.min(H-1,P.y+FR);y++)
+for(let x=Math.max(0,P.x-FR);x<=Math.min(W-1,P.x+FR);x++){
+const dx=x-P.x,dy=y-P.y;
+if(dx*dx+dy*dy<=FR*FR&&los(P.x,P.y,x,y)){vis[y][x]=true;seen[y][x]=true;}}}
+// ---------- 战斗与升级 ----------
+function hurt(m,d){m.hp-=d;if(m.hp<=0){mons.splice(mons.indexOf(m),1);
+log(m.name+" 死了！获得 "+m.xp+" 经验。");kills++;P.xp+=m.xp;lvl();return true;}return false;}
+function lvl(){while(P.xp>=P.level*8){P.xp-=P.level*8;P.level++;P.maxhp+=4;
+P.hp=Math.min(P.maxhp,P.hp+Math.ceil(P.maxhp*0.25));
+if(P.level%2===0)P.atk++;
+log("升级！等级 "+P.level+"，生命上限+4"+(P.level%2===0?"，攻击+1":"")+"。");}}
+// ---------- 玩家行动 ----------
+function pAct(dx,dy){
+const nx=P.x+dx,ny=P.y+dy;
+if(nx<0||ny<0||nx>=W||ny>=H||map[ny][nx]===0)return;
+const m=monAt(nx,ny);
+if(m){const d=Math.max(1,P.atk+R(3)-m.def);
+log("你攻击"+m.name+"，造成 "+d+" 点伤害。"+(hurt(m,d)?"":"（剩 "+m.hp+" HP）"));}
+else{
+P.x=nx;P.y=ny;
+const it=itmAt(nx,ny);
+if(it){
+if(it.t==="stair"){log("脚下是通往下层的楼梯，按 > 或回车下行。");}
+else{items.splice(items.indexOf(it),1);
+if(it.t==="pot"){P.pot++;log("捡到治疗药水（现有 "+P.pot+" 瓶，按 q 饮用）。");}
+else if(it.t==="swd"){P.atk+=2;log("捡到利剑！攻击 +2（现 "+P.atk+"）。");}
+else if(it.t==="shd"){P.def+=1;log("捡到盾牌！防御 +1（现 "+P.def+"）。");}
+else{state="win";log("你拾起了尤登护符！");}}}}
+fov();mTurn();}
+// ---------- 怪物回合 ----------
+function mTurn(){
+if(state!=="play")return;
+for(const m of mons.slice()){
+if(m.rg&&m.hp<m.maxhp)m.hp++;
+const d=dis(m.x,m.y,P.x,P.y);
+let step=null;
+if(d<=FR&&vis[m.y][m.x]){
+let best=d;
+for(const dd of DIRS){const dx=dd[0],dy=dd[1],nx=m.x+dx,ny=m.y+dy;
+if(nx===P.x&&ny===P.y){step=[dx,dy];break;}
+if(nx<0||ny<0||nx>=W||ny>=H||map[ny][nx]===0||monAt(nx,ny))continue;
+const nd=dis(nx,ny,P.x,P.y);
+if(nd<best||(nd===best&&R(3)===0)){best=nd;step=[dx,dy];}}}
+else if(R(4)===0){const dd=pick(DIRS),nx=m.x+dd[0],ny=m.y+dd[1];
+if(nx>=0&&ny>=0&&nx<W&&ny<H&&map[ny][nx]===1&&!monAt(nx,ny)&&!(nx===P.x&&ny===P.y))step=dd;}
+if(!step)continue;
+const tx=m.x+step[0],ty=m.y+step[1];
+if(tx===P.x&&ty===P.y){
+const dmg=Math.max(1,m.atk+R(3)-P.def);
+P.hp-=dmg;
+log(m.name+" 攻击你，造成 "+dmg+" 点伤害。");
+if(P.hp<=0){P.hp=0;state="dead";log("你被"+m.name+"杀死了……");return;}}
+else{m.x=tx;m.y=ty;}}}
+// ---------- 药水与楼梯 ----------
+function quaff(){
+if(state!=="play")return;
+if(P.pot<=0){log("没有药水了。");return;}
+if(P.hp>=P.maxhp){log("生命值已满，没有浪费药水。");return;}
+P.pot--;const h=Math.ceil(P.maxhp*0.4);P.hp=Math.min(P.maxhp,P.hp+h);
+log("你喝下治疗药水，恢复 "+h+" 点生命。");
+mTurn();}
+function descend(){
+if(state!=="play")return;
+const it=itmAt(P.x,P.y);
+if(it&&it.t==="stair"){depth++;log("你下到了第 "+depth+" 层。空气更加阴冷……");gen();}
+else log("这里没有楼梯。");}
+// ---------- 新游戏 ----------
+function newGame(){
+depth=1;kills=0;msgs=[];
+P={x:0,y:0,hp:24,maxhp:24,atk:4,def:0,level:1,xp:0,pot:1};
+state="intro";gen();
+log("你踏入黑暗的地牢。传说第 "+MAXD+" 层藏着尤登护符。");
+draw();}
+// ---------- 渲染 ----------
+function gl(ch,x,y,c){ctx.fillStyle=c;ctx.fillText(ch,x*T+3,y*T+1);}
+function draw(){
+ctx.fillStyle="#000";ctx.fillRect(0,0,cv.width,cv.height);
+if(state!=="intro"){
+for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+if(vis[y][x])gl(map[y][x]?"·":"#",x,y,map[y][x]?"#555":"#888");
+else if(seen[y][x])gl(map[y][x]?"·":"#",x,y,map[y][x]?"#1c1c1c":"#2e2e2e");}
+for(const it of items)if(seen[it.y][it.x])gl(it.g,it.x,it.y,vis[it.y][it.x]?it.c:"#234");
+for(const m of mons)if(vis[m.y][m.x])gl(m.g,m.x,m.y,m.c);
+gl("@",P.x,P.y,"#fff");}
+if(state==="intro")banner("地牢爬行","下到第 8 层，找到尤登护符 *",
+["移动：方向键 / WASD / YUBN 斜向","撞向怪物即可攻击 · q 喝药水 · > 或回车下楼梯","","按任意键开始……"],"#c9a227");
+if(state==="dead")banner("你死了","击杀 "+kills+" · 到达第 "+depth+" 层 · 等级 "+P.level,["","按 R 重新开始"],"#f44336");
+if(state==="win")banner("胜利！你找到了尤登护符","通关 8 层地牢 · 击杀 "+kills+" · 等级 "+P.level,["","按 R 再来一局"],"#00e5ff");
+drawHud();}
+function banner(t,s,lines,c){
+ctx.fillStyle="rgba(0,0,0,0.85)";ctx.fillRect(202,200,620,240);
+ctx.strokeStyle=c;ctx.strokeRect(202,200,620,240);
+ctx.textAlign="center";ctx.fillStyle=c;ctx.font="bold 26px Consolas,monospace";
+ctx.fillText(t,512,240);
+ctx.font="16px Consolas,monospace";ctx.fillStyle="#ddd";ctx.fillText(s,512,285);
+for(let i=0;i<lines.length;i++)ctx.fillText(lines[i],512,320+i*22);
+ctx.textAlign="left";ctx.font=T+'px Consolas,monospace';}
+function drawHud(){
+const pc=Math.round(P.hp/P.maxhp*100);
+hud.innerHTML='<span>HP <span id="hpbar"><span id="hpfill" style="width:'+pc+'%"></span></span> '+P.hp+'/'+P.maxhp+"</span>"
++"<span>深度 "+depth+"/"+MAXD+"</span><span>攻 "+P.atk+"</span><span>防 "+P.def+"</span>"
++"<span>Lv "+P.level+"（经验 "+P.xp+"/"+(P.level*8)+"）</span><span>药水 ×"+P.pot+"</span><span>击杀 "+kills+"</span>";}
+// ---------- 输入 ----------
+document.addEventListener("keydown",function(e){
+if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].indexOf(e.key)>=0)e.preventDefault();
+const k=e.key.toLowerCase();
+if(state==="intro"){state="play";draw();return;}
+if(state==="dead"||state==="win"){if(k==="r")newGame();return;}
+const mv={arrowup:[0,-1],w:[0,-1],arrowdown:[0,1],s:[0,1],arrowleft:[-1,0],a:[-1,0],arrowright:[1,0],d:[1,0],
+y:[-1,-1],u:[1,-1],b:[-1,1],n:[1,1],".":[0,0]," ":[0,0]}[k];
+if(mv){pAct(mv[0],mv[1]);draw();return;}
+if(k==="q"){quaff();draw();return;}
+if(k===">"||k==="enter"){descend();draw();return;}
+});
+newGame();
+</script>
+</body>
+</html>
