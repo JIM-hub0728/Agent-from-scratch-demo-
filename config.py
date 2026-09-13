@@ -3,21 +3,21 @@
 import os
 
 # ---- 主模型----
-MAIN_API_KEY = "sk-cbf8ea52539c44cb8fba1d72a4bf5126"
-MAIN_BASE_URL = "https://api.deepseek.com/anthropic"
-MODEL = "deepseek-flash"
+MAIN_API_KEY = ""
+MAIN_BASE_URL = ""
+MODEL = ""
 
 # ---- 记忆整理员（用便宜快的模型）----
-COMPACT_API_KEY = "sk-cbf8ea52539c44cb8fba1d72a4bf5126"
-COMPACT_BASE_URL = "https://api.deepseek.com/anthropic"
-COMPACT_MODEL = "deepseek-flash"
+COMPACT_API_KEY = ""
+COMPACT_BASE_URL = ""
+COMPACT_MODEL = ""
 
 # ---- embedding模型（RAG）----
-RAG_API_KEY = "sk-caoufebmmnvyjtztdekbasbjvmwwtmqdleidmtvmkvikdokl"
-RAG_API_URL = "https://api.siliconflow.cn/v1/embeddings"
-RAG_MODEL = "BAAI/bge-m3"
-RERANK_URL = "https://api.siliconflow.cn/v1/rerank"   # 精排接口（同一家平台，同一个 key）
-RERANK_MODEL = "BAAI/bge-reranker-v2-m3"              # 交叉编码器：query+候选一起读，逐对打分
+RAG_API_KEY = ""
+RAG_API_URL = ""
+RAG_MODEL = ""
+RERANK_URL = ""   
+RERANK_MODEL = "" 
 
 # 单次响应的 token 上限：是"上限"不是"预支"，按实际生成量计费，调大不多花钱。
 MAX_TOKENS = int(os.environ.get("AGENT_MAX_TOKENS", "16384"))
