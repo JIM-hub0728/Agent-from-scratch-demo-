@@ -108,7 +108,7 @@ agent-from-scratch/
 ├── agent.py            # 入口与主循环：双层循环 + stop_reason 分支 + 熔断
 ├── events.py           # 事件总线（42 行）：发布/订阅，9 种事件类型契约
 ├── ui.py               # TUI：纯事件订阅者，手绘状态栏，依赖全部可选降级
-├── config.example.py   # 配置模板（复制为 config.py 使用）
+├── config.py   # 配置模板
 │
 ├── tools.py            # 工具系统：声明式注册表 + 权限引擎 + 并发调度
 ├── plan.py             # todolist 状态机：校验流转规则，堵跳步/虚假完成
