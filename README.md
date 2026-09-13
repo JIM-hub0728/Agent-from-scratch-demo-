@@ -1,4 +1,4 @@
-# Agent-from-scratch
+# Agent-from-scratch(demo)
 
 > 不用 LangChain / LangGraph，用纯 Python 从零手搓一个 AI Agent —— 一个以"搞懂 Agent 到底怎么跑起来的"为目标的学习项目，而不是交付产品。
 
