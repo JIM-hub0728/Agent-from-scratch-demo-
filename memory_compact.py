@@ -15,8 +15,8 @@ COMPACT_TEMPLATE_PATH = Path(__file__).parent / "templates" / "compact_prompt.md
 EXTRACT_TEMPLATE_PATH = Path(__file__).parent / "templates" / "extract_prompt.md"
 MIN_USER_CHARS = 30          # 退出门控：用户实际输入累计低于此值且全程没用过工具 → 无实质内容，跳过提取
 
-# 整理员用独立的 DeepSeek client：压缩/提取是格式化任务，不配占用主模型的额度和缓存
-_curator_client = Anthropic(api_key=config.DEEPSEEK_API_KEY, base_url=config.DEEPSEEK_BASE_URL)
+# 整理员用独立的 Compact client：压缩/提取是格式化任务，不配占用主模型的额度和缓存
+_curator_client = Anthropic(api_key=config.COMPACT_API_KEY, base_url=config.COMPACT_BASE_URL)
 
 # agent.py 给真实用户输入加了 "[YYYY-MM-DD HH:MM:SS] " 前缀，据此把用户原话
 # 和程序注入的 user 消息（工具结果、todolist 提醒）区分开
@@ -92,7 +92,7 @@ def _call_curator(prompt: str, max_tokens: int):
     compact 是格式化任务，关掉深度思考：输出 token 省约 8 成，还杜绝思考烧穿额度"""
     try:
         return _curator_client.messages.create(
-            model=config.CURATOR_MODEL,
+            model=config.COMPACT_MODEL,
             max_tokens=max_tokens,
             thinking={"type": "disabled"},
             system="你是记忆整理员。请严格按要求输出 XML，不要输出额外解释。",

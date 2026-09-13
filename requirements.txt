@@ -1,0 +1,19 @@
+# AI/LLM
+anthropic>=0.40.0          # Anthropic SDK，调用 Claude/Kimi/DeepSeek API
+
+# 数据处理
+numpy>=1.24.0              # 向量矩阵运算（RAG 相似度计算）
+PyYAML>=6.0                # 解析 skill 的 SKILL.md frontmatter
+
+# 网络请求
+requests>=2.31.0           # HTTP 请求（web_fetch、API 调用）
+beautifulsoup4>=4.12.0     # HTML 解析（web_fetch 提取正文）
+
+# 终端 UI（可选，但推荐）
+rich>=13.0.0               # 终端富文本渲染（状态栏、彩色输出）
+prompt_toolkit>=3.0.0      # 交互式命令行（历史记录、自动补全）
+
+# 标准库（无需安装，Python 自带）
+# atexit, base64, concurrent.futures, dataclasses, datetime,
+# json, os, pathlib, re, shutil, subprocess, sys, tempfile,
+# threading, time, urllib.parse

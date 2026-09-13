@@ -15,6 +15,8 @@ from skill_loader import loader
 from plan import todo_list
 import sandbox
 import ui
+import memory_rag
+from undo import undo_stack
 
 READ_MAX_LINES = 2000      # read_file 一次最多读多少行
 LIST_MAX_ENTRIES = 500     # list_dir 最多列多少项
@@ -176,6 +178,7 @@ def edit_file(path: str, old_string: str, new_string: str) -> str:
         if _norm(path) not in _read_paths:
             return (f"错误：你还没有用 read_file 读过 {p}。"
                     f"为防止凭记忆乱改，请先 read_file 确认最新内容再编辑")
+        undo_stack.record(path)  # 落盘前先备份原文：/undo 要靠它还原
         text = p.read_text(encoding="utf-8", errors="replace")
         count = text.count(old_string)
         if count == 0:
@@ -275,6 +278,7 @@ def download_file(url: str, save_path: str, max_mb: int = 50) -> str:
         if p.exists() and _norm(save_path) not in _read_paths:
             return (f"错误：{p} 已存在，但你还没有用 read_file 读过它。"
                     f"为防止误覆盖，请先 read_file 或换个文件名")
+        undo_stack.record(save_path)  # 落盘前先备份原文：/undo 要靠它还原
         with requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"},
                           stream=True) as resp:
             resp.raise_for_status()
@@ -367,6 +371,7 @@ def write_file(path: str, content: str, mode: str = "overwrite") -> str:
             return (f"错误：{p} 已存在，但你还没有用 read_file 读过它。"
                     f"为防止凭幻觉覆盖，请先 read_file 再决定如何修改"
                     f"（即使你用 run_command 看过内容，也必须用 read_file 读一次）")
+        undo_stack.record(path)  # 落盘前先备份原文：/undo 要靠它还原
         p.parent.mkdir(parents=True, exist_ok=True)
         if mode == "append":
             with p.open("a", encoding="utf-8") as f:  # "a"=追加，写指针在文件尾
@@ -609,6 +614,25 @@ TOOLS = [
         },
         "capabilities": {"read_only": False, "concurrent_safe": False, "risk": "write"},
         "handler": write_file,
+    },
+    {
+        "name": "search_memory",
+        "description": (
+            "语义检索历史记忆：按意思或关键词（已搭RAG）搜索过去的每日情景记忆、"
+            "对话流水和长期记忆，返回带日期和出处的相关片段。"
+            "当用户问起以前讨论过什么、某个决定的来龙去脉，或你需要翻找"
+            "超出当前上下文的历史信息时使用；检索不到就如实说明，禁止编造。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "用自然语言描述要找的记忆"},
+                "top_k": {"type": "integer", "description": "返回几条，默认 3"},
+            },
+            "required": ["query"],
+        },
+        "capabilities": {"read_only": True, "concurrent_safe": True, "risk": "read"},
+        "handler": lambda query, top_k=3: memory_rag.search(query, top_k),
     },
 ]
 

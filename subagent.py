@@ -7,6 +7,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import tools
 from events import emit
+from memory_compact import sanitize_history
 import config
 
 def build_subagent_prompt(title: str, duty:str, boundary:str) -> str:
@@ -114,6 +115,9 @@ def run_subagent(client, task:str, agent_type:str = "coder", purpose:str = "") -
 
     messages = [{"role": "user", "content": task}]
     for turn in range(spec["max_turns"]):
+        # 先修补孤儿 tool_use：被 max_tokens 截断的回复可能带着没执行的工具调用，
+        # 后面又追加了文字消息，直接发请求会 400（主循环每轮也做同样的修补）
+        messages = sanitize_history(messages)
         msg = client.messages.create(
             model=config.MODEL,
             system=spec["system_prompt"],
@@ -159,7 +163,7 @@ def run_subagent(client, task:str, agent_type:str = "coder", purpose:str = "") -
             "不要调用任何工具，直接给文字总结。"})
         retry_msg = client.messages.create(
             model=config.MODEL, system=spec["system_prompt"],
-            tools=sub_tools, messages=messages, max_tokens=4096)
+            tools=sub_tools, messages=sanitize_history(messages), max_tokens=4096)
         retry_final = next((b.text for b in retry_msg.content if b.type == "text"), "")
         candidate = _best_effort(retry_final)
         if candidate:

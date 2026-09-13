@@ -8,6 +8,7 @@ from memory import memory
 from memory_compact import compact_history, extract_memory, sanitize_history
 from datetime import datetime
 from plan import todo_list
+from undo import undo_stack
 from concurrent.futures import ThreadPoolExecutor
 import subagent
 import team
@@ -17,8 +18,8 @@ from events import emit
 
 # API 配置全部收口在 config.py（两家供应商的 key / base_url 都在那里）
 client = Anthropic(
-    api_key=config.KIMI_API_KEY,
-    base_url=config.KIMI_BASE_URL,
+    api_key=config.MAIN_API_KEY,
+    base_url=config.MAIN_BASE_URL,
 )
 
 team.init(client)          # 注入 client：队友线程调模型要用
@@ -37,6 +38,7 @@ def build_system_prompt() -> str:
 不确定的事直接向用户提问，禁止编造。
 环境：Windows；跑代码、装依赖、跑测试优先用 code_sandbox（隔离沙箱）；系统级命令才用 run_command（cmd.exe，执行前会向用户请求确认）。
 网络：web_search 关键词搜索实时信息；web_fetch 抓取指定 URL 的网页全文；download_file 下载图片/PDF 等二进制文件到本地。
+记忆：search_memory 语义检索历史记忆（已搭 RAG），按意思或关键词搜索过去的每日情景、对话流水和长期记忆。当用户问起以前讨论过什么、某个决定的来龙去脉，或你需要翻找超出当前上下文的历史信息时使用。
 可用 skill（仅名称和描述）：{loader.get_catalog()}，
 任务与某个 skill 匹配时，先 load_skill 加载完整说明，再按说明执行。
 
@@ -98,6 +100,9 @@ def build_system_prompt() -> str:
     自行补查同样受规矩 4 的 ≥3 网页/文件限制，别把抓取刷屏到主上下文。
     连续 2 次失败必须更换策略，禁止重试同一地址；禁止编造 URL；禁止抓搜索引擎结果页（噪音）。
 
+11. 【记忆检索】用户问起过去的讨论、决定、偏好细节，或需要翻找超出当前上下文的历史信息时，
+    先用 search_memory 语义检索历史记忆；检索结果为空就明说没找到，禁止凭印象编造。
+
 【长期记忆】
 {memory.read_memory()}
 
@@ -123,6 +128,14 @@ while(True):
     if user_input.strip() == "/inbox":   # 查看队友给 lead 的回禀（给人看的）
         emit("info", text=json.dumps(team.BUS.read_inbox("lead"), ensure_ascii=False, indent=2))
         continue
+    if user_input.strip() == "/undo":    # 撤销上一轮的文件改动（弹撤销栈）
+        result = undo_stack.undo()
+        emit("info", text=result)
+        # 同步告知模型：否则它还以为文件保持着自己刚写完的样子，会接着幻觉干活
+        note = {"role": "user", "content": f"(系统：用户执行了撤销。{result})"}
+        history.append(note)
+        memory.append_history(note)
+        continue
     if user_input.strip() == "/exit":    # 退出前统一提取记忆：长期记忆只在会话结束时写，避免中途自我强化
         emit("info", text="[退出前整理记忆...]")
         extract_memory(history)
@@ -133,6 +146,7 @@ while(True):
                     "content": f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {user_input}"}
     history.append(user_message)
     memory.append_history(user_message)  # 流水落盘：凡 history.append 必紧跟
+    undo_stack.begin_turn()  # 开一轮新的改动快照：本轮所有写文件都会先备份原文
 
     # Agent 内层循环：模型可能连续多轮调用工具，直到不再请求工具为止
     truncations = 0  # 本回合内已连续被 max_tokens 截断的次数（防续写死循环）
@@ -280,4 +294,5 @@ while(True):
 
     # 一轮完整对话结束：旧对话超阈值时压缩进今日情景（长期记忆留到退出时统一提取）
     history = compact_history(history)
+    undo_stack.end_turn()  # 本轮有文件改动则压入撤销栈（没改动不占栈位）
     emit("turn_end")  # 回合结束：分隔线/状态清理由 UI 订阅者决定
